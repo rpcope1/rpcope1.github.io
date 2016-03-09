@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Bash on Robert Cope&#39;s Technical Blog</title>
+    <link>http://rpcope1.github.io/tags/bash/</link>
+    <description>Recent content in Bash on Robert Cope&#39;s Technical Blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Mon, 07 Mar 2016 20:44:52 -0700</lastBuildDate>
+    <atom:link href="http://rpcope1.github.io/tags/bash/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Simple Web Archiving</title>
+      <link>http://rpcope1.github.io/post/03072016/</link>
+      <pubDate>Mon, 07 Mar 2016 20:44:52 -0700</pubDate>
+      
+      <guid>http://rpcope1.github.io/post/03072016/</guid>
+      <description>
+
+&lt;h2 id=&#34;introduction-and-rationale:3e5679ca02c5bff0a07a4870ae547a09&#34;&gt;Introduction and Rationale&lt;/h2&gt;
+
+&lt;p&gt;While it may be true that the &amp;ldquo;internet never forgets&amp;rdquo;, it&amp;rsquo;s also true that
+change is inevitable, especially when we think about the rather ephemeral
+nature of many sites on the web. Often niche sites that are gold mines of
+useful information disappear for a multitude of reasons; even on major content
+providers, such as Youtube, content is subject to be be removed or become otherwise
+inaccessible at a moments notice. Many of these niche (or not so niche) sites that
+have much interesting or valuable content that you may want to hold
+on to, even in the event of the site disappearing into the abyss of the internet.&lt;/p&gt;
+
+&lt;p&gt;In particular, I enjoy drum and bass, and am a regular listener to several shows
+on &lt;a href=&#34;http://bassdrive.com/v2/&#34;&gt;Bassdrive&lt;/a&gt;. I listen to a number of shows include
+DJ Blofeld&amp;rsquo;s Prague Connection show, and enjoy listening to the show at home and
+in the care; because I&amp;rsquo;d like to be able to continue listening to episodes of his
+show even if Bassdrive were to go away, I wanted to automatically check to see
+if any new episodes of his (and other selected shows) and download them to local
+storage on a regular basis.&lt;/p&gt;
+
+&lt;h2 id=&#34;expository:3e5679ca02c5bff0a07a4870ae547a09&#34;&gt;Expository&lt;/h2&gt;
+
+&lt;p&gt;This task is made simpler than attempting to archive media from mainstream content
+providers such as Youtube, because the &lt;a href=&#34;http://archives.bassdrivearchive.com/&#34;&gt;Bassdrive Archives&lt;/a&gt;
+provide the previous shows as mp3 downloads using a very simple directory structure.
+All of DJ Blofeld&amp;rsquo;s Prague Connection shows are accessible from a &lt;a href=&#34;http://archives.bassdrivearchive.com/1%20-%20Monday/The%20Prague%20Connection%20-%20Blofeld/&#34;&gt;single HTML directory page&lt;/a&gt;,
+making this a relatively straightforward task. To automate this checking and download
+process, we make use of &lt;strong&gt;cron&lt;/strong&gt;, &lt;strong&gt;wget&lt;/strong&gt; and some &lt;strong&gt;bash&lt;/strong&gt; scripting. First we create a
+directory on disk to store all of our archived shows in, and create a subfolder for each
+show to store the mp3s in. Each subfolder should have a remote_location.txt file
+that gives the Bassdrive Archive url for the HTML folder for the show.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;wget&lt;/strong&gt; is used to do much of the heavy lifting for archival here &amp;ndash; it has a number
+of feature flags that make it ideal for archival. The &lt;strong&gt;-r&lt;/strong&gt; flag is utilized to
+recursively fetch all of the links in the target directory (the mp3s for each
+episode). We utilize &lt;strong&gt;-A mp3&lt;/strong&gt; as well to filter out all non mp3 files from being
+fetched, and use &lt;strong&gt;-np&lt;/strong&gt; to avoid fetching any files any parent or sibling folders
+in the URL tree. One of the most powerful flags that we use is &lt;strong&gt;-N&lt;/strong&gt;; this flag
+calls an HTTP HEAD request on each of the files to be downloaded, and only
+downloads the file if the content modification date from the HTTP request is
+newer than the modification date of the file on disk (if it exists). When a file
+is updated with the &lt;strong&gt;-N&lt;/strong&gt; flag, the modification on date is updated to match the
+modification date of the HTTP request. This prevents us from needlessly redownloading
+large content, such as mp3s. We also make use of &lt;strong&gt;&amp;ndash;directory-prefix&lt;/strong&gt; to set the
+folder to save our mp3s into, and &lt;strong&gt;-nd&lt;/strong&gt; to squash any directory structure in the URLs
+(and just save all of the mp3s directly into the target folder. Finally we
+set a custom user agent using &lt;strong&gt;-U&lt;/strong&gt;, and limit our download speed (to be courteous)
+via &lt;strong&gt;&amp;ndash;limit-rate&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;To sum this all up, our wget command looks something like:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;wget -np -N -r --directory-prefix=$SAVE_DIR -nd -U &amp;quot;MyArchiver&amp;quot; -A mp3 --limit-rate=$MAX_SPEED $REMOTE_LOCATION
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;We can thus fold this wget command into a simple Bash script to scan our archive directory for valid show folders,
+and check and scan for new mp3s for each sub-folder:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;#!/bin/bash
+
+MIRROR_DIRECTORY=/data/bassdrive
+MAX_SPEED=50k
+USER_AGENT=&amp;quot;BassdriveArchiver&amp;quot;
+
+# For each file/directory in the base archive mirror directory...
+for dir in $(ls -d $MIRROR_DIRECTORY/*); do
+    # if this is a directory and the directory contains a file named &amp;quot;remote_location.txt&amp;quot;
+    if [ -d &amp;quot;$dir&amp;quot; ] &amp;amp;&amp;amp; [ -e &amp;quot;$dir/remote_location.txt&amp;quot; ]
+    then
+        # Read the remote location from the file
+        REMOTE_LOCATION=`cat $dir/remote_location.txt`
+        echo &amp;quot;Running archival for remote location: $REMOTE_LOCATION&amp;quot;
+        # Fetch all new child mp3s from the remote URL and save them to the directory dir
+        wget -np -N -r --directory-prefix=$dir -nd -U $USER_AGENT -A mp3 --limit-rate=$MAX_SPEED $REMOTE_LOCATION
+        echo &amp;quot;Archival completed for remote location: $REMOTE_LOCATION&amp;quot;
+    fi
+done
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;In order to tie everything up, we utilize cron to run our script once a week, via a crontab line like:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# Sample crontab
+# m h  dom mon dow   command
+0 5 * * 3 /data/bassdrive/my_bassdrive_mirror_script.sh
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This will thus go out every Wednesday at 5AM and look for check and download new show episode mp3s to each show&amp;rsquo;s subfolder.&lt;/p&gt;
+
+&lt;h2 id=&#34;conclusion:3e5679ca02c5bff0a07a4870ae547a09&#34;&gt;Conclusion&lt;/h2&gt;
+
+&lt;p&gt;We have solved the basic archival need here, and this can be tweaked a little bit to match a number of other sites and use cases.
+While some sites may not be easily archivable by in this manner (and require much more scripting and thinking), tools like wget
+are surprisingly flexible and likely can meet most archival challenges.&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
